@@ -38,14 +38,21 @@
     </form>
     <div id="plot"></div>
     <script>
-        // Inserta * implícitos en expresiones tipo 2x -> 2*x, -3y -> -3*y
+        // Inserta * implícitos en expresiones tipo 2x -> 2*x, -3y -> -3*y, etc.
         function insertarMultiplicacion(expr) {
             // 2x -> 2*x, -3y -> -3*y, etc.
-            return expr.replace(/(\d)([xy])/g, '$1*$2')
-                       .replace(/([xy])(\d)/g, '$1*$2'); // x2 -> x*2 (por si acaso)
+            return expr.replace(/([0-9])([a-zA-Z])/g, '$1*$2')
+                       .replace(/([a-zA-Z])([0-9])/g, '$1*$2');
         }
-        // Convierte una desigualdad tipo "2x - y <= 6" en función evaluable
+
+        // Reemplaza ≤ y ≥ por <= y >=, y quita espacios extra
+        function limpiarExpresion(ineq) {
+            return ineq.replace(/≤/g, "<=").replace(/≥/g, ">=").replace(/\s+/g, '');
+        }
+
+        // Convierte una desigualdad tipo "2x-y<=6" en función evaluable
         function parseInequality(ineq) {
+            ineq = limpiarExpresion(ineq);
             let ops = ["<=", ">=", "<", ">"];
             let found = ops.find(op => ineq.includes(op));
             if (!found) return null;
@@ -81,6 +88,7 @@
                     }
                 }
             }
+
             // Trazar fronteras principales (líneas de igualdad)
             let fronteras = [];
             inequalities.forEach((ineq, i) => {
@@ -93,35 +101,37 @@
                 } else if (left === "x") {
                     pointsX = [parseFloat(right), parseFloat(right)];
                     pointsY = [yMin, yMax];
-                } else {
-                    // Despejar y en función de x si es posible
-                    for (let x = xMin; x <= xMax; x += 0.05) {
-                        // Intenta evaluar para y la igualdad
-                        try {
-                            // Busca la forma ay + bx = c
-                            let y = null;
-                            if (left.includes("y")) {
-                                // Pasa todo a la izquierda y = f(x)
-                                // Reemplaza y por una variable temporal para aislar
-                                let left2 = left.replace(/y/g, "(Y)");
-                                let eqString = left2 + " - (" + right + ")";
-                                // Soluciona para y usando new Function (intenta y para distintos valores)
-                                // Aquí probamos para varios valores de y, para cada x, para encontrar donde la igualdad se cumple
-                                let foundY = null;
-                                for (let yTest = yMin; yTest <= yMax; yTest += 0.05) {
-                                    let val = new Function("x", "Y", "return " + eqString + ";")(x, yTest);
-                                    // Cuando está cerca de 0 (la igualdad), tomamos ese punto
-                                    if (Math.abs(val) < 0.04) {
-                                        foundY = yTest;
-                                        break;
-                                    }
-                                }
-                                if (foundY !== null && foundY >= yMin && foundY <= yMax) {
-                                    pointsX.push(x);
-                                    pointsY.push(foundY);
+                } else if (left.includes("y")) {
+                    // Forma general: ax + by = c => y = (c - ax)/b
+                    // Detecta coeficientes
+                    let match = left.match(/^([+-]?\d*\.?\d*)x([+-]\d*\.?\d*)y?$/);
+                    if (match) {
+                        let a = parseFloat(match[1]) || (match[1] === "-" ? -1 : 1);
+                        let b = parseFloat(match[2]) || (match[2][0] === "-" ? -1 : 1);
+                        for (let x = xMin; x <= xMax; x += 0.05) {
+                            let y = (parseFloat(right) - a * x) / b;
+                            if (y >= yMin && y <= yMax) {
+                                pointsX.push(x);
+                                pointsY.push(y);
+                            }
+                        }
+                    } else {
+                        // Para cualquier ecuación con x, y (no solo ax+by)
+                        for (let x = xMin; x <= xMax; x += 0.05) {
+                            // Busca y tal que f(x,y)=right
+                            let foundY = null;
+                            for (let yTest = yMin; yTest <= yMax; yTest += 0.05) {
+                                let val = new Function("x", "y", `return (${left}) - (${right});`)(x, yTest);
+                                if (Math.abs(val) < 0.04) {
+                                    foundY = yTest;
+                                    break;
                                 }
                             }
-                        } catch {}
+                            if (foundY !== null && foundY >= yMin && foundY <= yMax) {
+                                pointsX.push(x);
+                                pointsY.push(foundY);
+                            }
+                        }
                     }
                 }
                 fronteras.push({
@@ -168,7 +178,11 @@
                 alert('¡Debes ingresar al menos una desigualdad válida!');
                 return;
             }
-            graficar(ineqs);
+            try {
+                graficar(ineqs);
+            } catch (err) {
+                alert("¡Ocurrió un error al graficar! Verifica la sintaxis de tus desigualdades.");
+            }
         };
 
         // Demo inicial
@@ -177,6 +191,7 @@
     </script>
 </body>
 </html>
+
 
 
                 

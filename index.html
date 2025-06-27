@@ -38,49 +38,31 @@
     </form>
     <div id="plot"></div>
     <script>
-        // Convierte una desigualdad tipo "2x - y <= 6" en una función evaluable
+        // Inserta * implícitos en expresiones tipo 2x -> 2*x, -3y -> -3*y
+        function insertarMultiplicacion(expr) {
+            // 2x -> 2*x, -3y -> -3*y, etc.
+            return expr.replace(/(\d)([xy])/g, '$1*$2')
+                       .replace(/([xy])(\d)/g, '$1*$2'); // x2 -> x*2 (por si acaso)
+        }
+        // Convierte una desigualdad tipo "2x - y <= 6" en función evaluable
         function parseInequality(ineq) {
             let ops = ["<=", ">=", "<", ">"];
             let found = ops.find(op => ineq.includes(op));
             if (!found) return null;
             let [left, right] = ineq.split(found).map(s => s.trim());
-            let opMap = {"<=": "<=", ">=": ">=", "<": "<", ">": ">"};
+            // Limpia e inserta *
+            left = insertarMultiplicacion(left);
+            right = insertarMultiplicacion(right);
             // Función: evalúa para x,y si cumple
-            return {
-                op: found,
-                func: new Function("x", "y", `return (${left}) ${opMap[found]} (${right});`),
-                left: left,
-                right: right,
-                texto: ineq
-            };
-        }
-
-        // Para la frontera, despeja y (si se puede)
-        function getFrontera(ineq) {
-            let left = ineq.left;
-            let right = ineq.right;
-            // Si es y solo (ej: y >= 0)
-            if (left.match(/^y$/)) {
-                return {type: "horiz", y: parseFloat(right)};
-            }
-            // Si es x solo (ej: x >= 0)
-            if (left.match(/^x$/)) {
-                return {type: "vert", x: parseFloat(right)};
-            }
-            // Si tiene forma ax + by (ej: 2x - y)
-            // despeja y: ax + by = c -> y = (c - ax)/b
-            let m = left.match(/^([+-]?\d*\.?\d*)x\s*([+-]\s*\d*\.?\d*)?y?$/) || left.match(/^([+-]?\d*\.?\d*)x\s*([+-]?\s*\d*\.?\d*)y$/);
-            if (left.includes('y')) {
-                // Pasar todo a la forma Ay = C - Bx, y = (C - Bx)/A
-                try {
-                    // Reemplazar x por valor y despejar y usando eval
-                    return {
-                        type: "gen",
-                        f: new Function("x", `with(Math){ return eval("("+left.replace(/y/g,"*Y")+")-"+right+"==0") ? 0 : ((${right})-(${left.replace(/x/g,"("+ "x" +")").replace(/y/g,"") }))/(${left.includes('y')?left.split('y')[0].replace(/[^-\d.]/g,'')||'1':1}) }` )
-                    };
-                } catch { return null; }
-            }
-            return null;
+            try {
+                return {
+                    op: found,
+                    func: new Function("x", "y", `return (${left}) ${found} (${right});`),
+                    left: left,
+                    right: right,
+                    texto: ineq
+                };
+            } catch (e) { return null; }
         }
 
         function graficar(inequalities) {
@@ -102,7 +84,6 @@
             // Trazar fronteras principales (líneas de igualdad)
             let fronteras = [];
             inequalities.forEach((ineq, i) => {
-                // solo para las que tienen x e y
                 let left = ineq.left, right = ineq.right;
                 let pointsX = [], pointsY = [];
                 // Si solo hay y (ej: y >= ...)
@@ -119,25 +100,25 @@
                         try {
                             // Busca la forma ay + bx = c
                             let y = null;
-                            // Caso típico: 2x - y <= 6 => y = 2x - 6
                             if (left.includes("y")) {
-                                // Intenta aislar y (solo para formato ax + by)
-                                // Ejemplo: 2x - y = 6  => y = 2x - 6
-                                let eq = left.replace(/\s/g, '');
-                                let a = 1, b = 0, c = 0;
-                                // ax + by
-                                let coefX = eq.match(/([+-]?\d*\.?\d*)x/);
-                                let coefY = eq.match(/([+-]?\d*\.?\d*)y/);
-                                let A = coefX ? parseFloat(coefX[1] || "1") : 0;
-                                let B = coefY ? parseFloat(coefY[1] || "1") : 0;
-                                if (isNaN(A)) A = eq.includes('-x') ? -1 : 1;
-                                if (isNaN(B)) B = eq.includes('-y') ? -1 : 1;
-                                if (B !== 0) {
-                                    y = (parseFloat(right) - A * x) / B;
-                                    if (y >= yMin && y <= yMax) {
-                                        pointsX.push(x);
-                                        pointsY.push(y);
+                                // Pasa todo a la izquierda y = f(x)
+                                // Reemplaza y por una variable temporal para aislar
+                                let left2 = left.replace(/y/g, "(Y)");
+                                let eqString = left2 + " - (" + right + ")";
+                                // Soluciona para y usando new Function (intenta y para distintos valores)
+                                // Aquí probamos para varios valores de y, para cada x, para encontrar donde la igualdad se cumple
+                                let foundY = null;
+                                for (let yTest = yMin; yTest <= yMax; yTest += 0.05) {
+                                    let val = new Function("x", "Y", "return " + eqString + ";")(x, yTest);
+                                    // Cuando está cerca de 0 (la igualdad), tomamos ese punto
+                                    if (Math.abs(val) < 0.04) {
+                                        foundY = yTest;
+                                        break;
                                     }
+                                }
+                                if (foundY !== null && foundY >= yMin && foundY <= yMax) {
+                                    pointsX.push(x);
+                                    pointsY.push(foundY);
                                 }
                             }
                         } catch {}
@@ -196,5 +177,6 @@
     </script>
 </body>
 </html>
+
 
                 

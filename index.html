@@ -2,107 +2,199 @@
 <html lang="es">
 <head>
     <meta charset="UTF-8">
-    <title>Sistema de Desigualdades 2 Variables</title>
+    <title>Graficador de Sistemas de Desigualdades</title>
     <script src="https://cdn.plot.ly/plotly-latest.min.js"></script>
     <style>
         body {
-            font-family: Arial, sans-serif;
             background: #181818;
             color: #fff;
+            font-family: Arial, sans-serif;
         }
-        h2, p { color: #fff; }
         #plot { width: 700px; height: 500px; margin-top: 15px;}
+        input, textarea, button {
+            background: #222;
+            color: #fff;
+            border: 1px solid #555;
+            border-radius: 4px;
+            padding: 4px 8px;
+        }
+        button { font-weight: bold; background: #444; cursor: pointer; }
+        button:hover { background: #666; }
+        textarea { width: 320px; height: 70px; resize: none; }
     </style>
 </head>
 <body>
-    <h2>Solución gráfica de un sistema de desigualdades</h2>
-    <p>Se grafican:<br>
-        2x - y ≤ 6<br>
-        x + 2y ≥ 7<br>
-        y ≥ 0
+    <h2>Graficador de Sistemas de Desigualdades</h2>
+    <p>Ingresa cada desigualdad en una línea:<br>
+        Ejemplo:<br>
+        <code>2x - y <= 6</code><br>
+        <code>x + 2y >= 7</code><br>
+        <code>y >= 0</code>
     </p>
+    <form id="form">
+        <textarea id="input" placeholder="Escribe tus desigualdades aquí..."></textarea>
+        <br>
+        <button type="submit">Graficar</button>
+    </form>
     <div id="plot"></div>
     <script>
-        // Rango
-        const xMin = -2, xMax = 8, yMin = -2, yMax = 8;
-        let regionX = [], regionY = [];
-
-        // Explora la malla para encontrar la región solución
-        for(let xi = xMin; xi <= xMax; xi += 0.1) {
-            for(let yi = yMin; yi <= yMax; yi += 0.1) {
-                let ok1 = 2*xi - yi <= 6 + 1e-6;
-                let ok2 = xi + 2*yi >= 7 - 1e-6;
-                let ok3 = yi >= 0 - 1e-6;
-                if(ok1 && ok2 && ok3) {
-                    regionX.push(xi);
-                    regionY.push(yi);
-                }
-            }
+        // Convierte una desigualdad tipo "2x - y <= 6" en una función evaluable
+        function parseInequality(ineq) {
+            let ops = ["<=", ">=", "<", ">"];
+            let found = ops.find(op => ineq.includes(op));
+            if (!found) return null;
+            let [left, right] = ineq.split(found).map(s => s.trim());
+            let opMap = {"<=": "<=", ">=": ">=", "<": "<", ">": ">"};
+            // Función: evalúa para x,y si cumple
+            return {
+                op: found,
+                func: new Function("x", "y", `return (${left}) ${opMap[found]} (${right});`),
+                left: left,
+                right: right,
+                texto: ineq
+            };
         }
 
-        // Líneas frontera
-        function frontera(fx) {
-            let X = [], Y = [];
-            for(let x = xMin; x <= xMax; x += 0.05) {
-                let y = fx(x);
-                if(y >= yMin && y <= yMax) {
-                    X.push(x);
-                    Y.push(y);
-                }
+        // Para la frontera, despeja y (si se puede)
+        function getFrontera(ineq) {
+            let left = ineq.left;
+            let right = ineq.right;
+            // Si es y solo (ej: y >= 0)
+            if (left.match(/^y$/)) {
+                return {type: "horiz", y: parseFloat(right)};
             }
-            return {X, Y};
+            // Si es x solo (ej: x >= 0)
+            if (left.match(/^x$/)) {
+                return {type: "vert", x: parseFloat(right)};
+            }
+            // Si tiene forma ax + by (ej: 2x - y)
+            // despeja y: ax + by = c -> y = (c - ax)/b
+            let m = left.match(/^([+-]?\d*\.?\d*)x\s*([+-]\s*\d*\.?\d*)?y?$/) || left.match(/^([+-]?\d*\.?\d*)x\s*([+-]?\s*\d*\.?\d*)y$/);
+            if (left.includes('y')) {
+                // Pasar todo a la forma Ay = C - Bx, y = (C - Bx)/A
+                try {
+                    // Reemplazar x por valor y despejar y usando eval
+                    return {
+                        type: "gen",
+                        f: new Function("x", `with(Math){ return eval("("+left.replace(/y/g,"*Y")+")-"+right+"==0") ? 0 : ((${right})-(${left.replace(/x/g,"("+ "x" +")").replace(/y/g,"") }))/(${left.includes('y')?left.split('y')[0].replace(/[^-\d.]/g,'')||'1':1}) }` )
+                    };
+                } catch { return null; }
+            }
+            return null;
         }
 
-        // 2x - y = 6 → y = 2x - 6
-        let f1 = frontera(x => 2*x - 6);
-        // x + 2y = 7 → y = (7-x)/2
-        let f2 = frontera(x => (7-x)/2);
-        // y = 0
-        let f3 = frontera(x => 0);
+        function graficar(inequalities) {
+            const xMin = -5, xMax = 10, yMin = -5, yMax = 10;
+            let regionX = [], regionY = [];
+            // Encuentra la región solución
+            for(let xi = xMin; xi <= xMax; xi += 0.12) {
+                for(let yi = yMin; yi <= yMax; yi += 0.12) {
+                    let ok = inequalities.every(ineq => {
+                        try { return ineq.func(xi, yi); }
+                        catch { return false; }
+                    });
+                    if(ok) {
+                        regionX.push(xi);
+                        regionY.push(yi);
+                    }
+                }
+            }
+            // Trazar fronteras principales (líneas de igualdad)
+            let fronteras = [];
+            inequalities.forEach((ineq, i) => {
+                // solo para las que tienen x e y
+                let left = ineq.left, right = ineq.right;
+                let pointsX = [], pointsY = [];
+                // Si solo hay y (ej: y >= ...)
+                if (left === "y") {
+                    pointsX = [xMin, xMax];
+                    pointsY = [parseFloat(right), parseFloat(right)];
+                } else if (left === "x") {
+                    pointsX = [parseFloat(right), parseFloat(right)];
+                    pointsY = [yMin, yMax];
+                } else {
+                    // Despejar y en función de x si es posible
+                    for (let x = xMin; x <= xMax; x += 0.05) {
+                        // Intenta evaluar para y la igualdad
+                        try {
+                            // Busca la forma ay + bx = c
+                            let y = null;
+                            // Caso típico: 2x - y <= 6 => y = 2x - 6
+                            if (left.includes("y")) {
+                                // Intenta aislar y (solo para formato ax + by)
+                                // Ejemplo: 2x - y = 6  => y = 2x - 6
+                                let eq = left.replace(/\s/g, '');
+                                let a = 1, b = 0, c = 0;
+                                // ax + by
+                                let coefX = eq.match(/([+-]?\d*\.?\d*)x/);
+                                let coefY = eq.match(/([+-]?\d*\.?\d*)y/);
+                                let A = coefX ? parseFloat(coefX[1] || "1") : 0;
+                                let B = coefY ? parseFloat(coefY[1] || "1") : 0;
+                                if (isNaN(A)) A = eq.includes('-x') ? -1 : 1;
+                                if (isNaN(B)) B = eq.includes('-y') ? -1 : 1;
+                                if (B !== 0) {
+                                    y = (parseFloat(right) - A * x) / B;
+                                    if (y >= yMin && y <= yMax) {
+                                        pointsX.push(x);
+                                        pointsY.push(y);
+                                    }
+                                }
+                            }
+                        } catch {}
+                    }
+                }
+                fronteras.push({
+                    x: pointsX,
+                    y: pointsY,
+                    mode: 'lines',
+                    name: ineq.texto,
+                    line: {width: 2}
+                });
+            });
 
-        let traces = [
-            {
+            // Región solución
+            let regionTrace = {
                 x: regionX,
                 y: regionY,
                 mode: 'markers',
                 name: 'Región Solución',
-                marker: {color: 'rgba(0,255,0,0.3)', size: 5},
+                marker: {color: 'rgba(0,255,0,0.3)', size: 6},
                 type: 'scatter'
-            },
-            {
-                x: f1.X,
-                y: f1.Y,
-                mode: 'lines',
-                name: '2x - y = 6',
-                line: {color: 'yellow', width: 2}
-            },
-            {
-                x: f2.X,
-                y: f2.Y,
-                mode: 'lines',
-                name: 'x + 2y = 7',
-                line: {color: 'cyan', width: 2}
-            },
-            {
-                x: f3.X,
-                y: f3.Y,
-                mode: 'lines',
-                name: 'y = 0',
-                line: {color: 'red', width: 2}
+            };
+            // Colores alternados para fronteras
+            let colores = ['yellow', 'cyan', 'red', 'orange'];
+            for (let i = 0; i < fronteras.length; i++) {
+                fronteras[i].line.color = colores[i % colores.length];
             }
-        ];
+            let layout = {
+                paper_bgcolor: "#181818",
+                plot_bgcolor: "#181818",
+                font: {color: "#fff"},
+                xaxis: {range: [xMin, xMax], title: "x", gridcolor:"#333"},
+                yaxis: {range: [yMin, yMax], title: "y", gridcolor:"#333"},
+                title: "Región de Solución del Sistema",
+                showlegend: true
+            };
+            Plotly.newPlot('plot', [regionTrace, ...fronteras], layout);
+        }
 
-        let layout = {
-            paper_bgcolor: "#181818",
-            plot_bgcolor: "#181818",
-            font: {color: "#fff"},
-            xaxis: {range: [xMin, xMax], title: "x", gridcolor:"#333"},
-            yaxis: {range: [yMin, yMax], title: "y", gridcolor:"#333"},
-            title: "Región de Solución del Sistema",
-            showlegend: true
+        document.getElementById("form").onsubmit = function(e) {
+            e.preventDefault();
+            let raw = document.getElementById("input").value;
+            let lines = raw.split('\n').map(s=>s.trim()).filter(s=>s.length);
+            let ineqs = lines.map(parseInequality).filter(x => x);
+            if (ineqs.length === 0) {
+                alert('¡Debes ingresar al menos una desigualdad válida!');
+                return;
+            }
+            graficar(ineqs);
         };
 
-        Plotly.newPlot('plot', traces, layout);
+        // Demo inicial
+        document.getElementById("input").value = "2x - y <= 6\nx + 2y >= 7\ny >= 0";
+        document.getElementById("form").onsubmit(new Event('submit'));
     </script>
 </body>
 </html>
+
+                

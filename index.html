@@ -1,0 +1,108 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <title>Sistema de Desigualdades 2 Variables</title>
+    <script src="https://cdn.plot.ly/plotly-latest.min.js"></script>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            background: #181818;
+            color: #fff;
+        }
+        h2, p { color: #fff; }
+        #plot { width: 700px; height: 500px; margin-top: 15px;}
+    </style>
+</head>
+<body>
+    <h2>Solución gráfica de un sistema de desigualdades</h2>
+    <p>Se grafican:<br>
+        2x - y ≤ 6<br>
+        x + 2y ≥ 7<br>
+        y ≥ 0
+    </p>
+    <div id="plot"></div>
+    <script>
+        // Rango
+        const xMin = -2, xMax = 8, yMin = -2, yMax = 8;
+        let regionX = [], regionY = [];
+
+        // Explora la malla para encontrar la región solución
+        for(let xi = xMin; xi <= xMax; xi += 0.1) {
+            for(let yi = yMin; yi <= yMax; yi += 0.1) {
+                let ok1 = 2*xi - yi <= 6 + 1e-6;
+                let ok2 = xi + 2*yi >= 7 - 1e-6;
+                let ok3 = yi >= 0 - 1e-6;
+                if(ok1 && ok2 && ok3) {
+                    regionX.push(xi);
+                    regionY.push(yi);
+                }
+            }
+        }
+
+        // Líneas frontera
+        function frontera(fx) {
+            let X = [], Y = [];
+            for(let x = xMin; x <= xMax; x += 0.05) {
+                let y = fx(x);
+                if(y >= yMin && y <= yMax) {
+                    X.push(x);
+                    Y.push(y);
+                }
+            }
+            return {X, Y};
+        }
+
+        // 2x - y = 6 → y = 2x - 6
+        let f1 = frontera(x => 2*x - 6);
+        // x + 2y = 7 → y = (7-x)/2
+        let f2 = frontera(x => (7-x)/2);
+        // y = 0
+        let f3 = frontera(x => 0);
+
+        let traces = [
+            {
+                x: regionX,
+                y: regionY,
+                mode: 'markers',
+                name: 'Región Solución',
+                marker: {color: 'rgba(0,255,0,0.3)', size: 5},
+                type: 'scatter'
+            },
+            {
+                x: f1.X,
+                y: f1.Y,
+                mode: 'lines',
+                name: '2x - y = 6',
+                line: {color: 'yellow', width: 2}
+            },
+            {
+                x: f2.X,
+                y: f2.Y,
+                mode: 'lines',
+                name: 'x + 2y = 7',
+                line: {color: 'cyan', width: 2}
+            },
+            {
+                x: f3.X,
+                y: f3.Y,
+                mode: 'lines',
+                name: 'y = 0',
+                line: {color: 'red', width: 2}
+            }
+        ];
+
+        let layout = {
+            paper_bgcolor: "#181818",
+            plot_bgcolor: "#181818",
+            font: {color: "#fff"},
+            xaxis: {range: [xMin, xMax], title: "x", gridcolor:"#333"},
+            yaxis: {range: [yMin, yMax], title: "y", gridcolor:"#333"},
+            title: "Región de Solución del Sistema",
+            showlegend: true
+        };
+
+        Plotly.newPlot('plot', traces, layout);
+    </script>
+</body>
+</html>
